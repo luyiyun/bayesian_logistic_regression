@@ -40,6 +40,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "polyagamma" },
     { name = "pymc" },
     { name = "scipy" },
     { name = "seaborn" },
@@ -52,6 +53,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=2.3.0" },
     { name = "pandas", specifier = ">=2.3.0" },
+    { name = "polyagamma", specifier = ">=2.0.2" },
     { name = "pymc", specifier = ">=5.23.0" },
     { name = "scipy", specifier = ">=1.15.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
@@ -595,6 +597,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/92/1ca0c3f09233bd7decf8f7105a1c4e3162fb9142128c74adad0fb361b7eb/pillow-11.2.1-cp313-cp313t-win32.whl", hash = "sha256:e0b55f27f584ed623221cfe995c912c61606be8513bfa0e07d2c674b4516d9dd", size = 2335774 },
     { url = "https://files.pythonhosted.org/packages/a5/ac/77525347cb43b83ae905ffe257bbe2cc6fd23acb9796639a1f56aa59d191/pillow-11.2.1-cp313-cp313t-win_amd64.whl", hash = "sha256:36d6b82164c39ce5482f649b437382c0fb2395eabc1e2b1702a6deb8ad647d6e", size = 2681895 },
     { url = "https://files.pythonhosted.org/packages/67/32/32dc030cfa91ca0fc52baebbba2e009bb001122a1daa8b6a79ad830b38d3/pillow-11.2.1-cp313-cp313t-win_arm64.whl", hash = "sha256:225c832a13326e34f212d2072982bb1adb210e0cc0b153e688743018c94a2681", size = 2417234 },
+]
+
+[[package]]
+name = "polyagamma"
+version = "2.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/f3/d829de9140ad15ffb011a81e1c252cea5815bd178ecea94d6f89b6c2ccf7/polyagamma-2.0.2.tar.gz", hash = "sha256:7fbadf5845433c7a81293503edf73020a3825935433d2bae2a5dd68183516f4c", size = 119776 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/25/0a1610694a925f5f66e3626140617209c2255a684a865278e0dd36a163ec/polyagamma-2.0.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:67a3004f99bd5d4a9cceeb82cd7554f131c2eb4aa98b17d76a4a75c3ba38fcaf", size = 86145 },
+    { url = "https://files.pythonhosted.org/packages/f0/3d/dce3d3c404bb686751f5c55ad1190c55ee5e9d17c9913a8ed5fddb727041/polyagamma-2.0.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6d6a83e4be7acb4d8ae4b507e50d211d016c76670f78bae116ff02432dfdc1d4", size = 246591 },
+    { url = "https://files.pythonhosted.org/packages/c7/c3/2f36de5ab1c75cda80532339eb13470ad5c200e4c90b598220592f605ed8/polyagamma-2.0.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4d0429c4a398e4a36142b7eac1e061bd6b42def85c6281be7db32cc58d1d9760", size = 252811 },
+    { url = "https://files.pythonhosted.org/packages/78/43/6c6c52a193b2ecc966e5a2e5c9aa04e2c102d57fe36ffe793917d1d48a2f/polyagamma-2.0.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:815a4adfdaf5c1ae9cebbe20dfdfb13234e06d1da8d786b68e83d9d6412bc01a", size = 259148 },
+    { url = "https://files.pythonhosted.org/packages/f7/b0/8310fa61dfa6c5e07c7c701bc3b1170bac371f8f6acdd584574146c76dc6/polyagamma-2.0.2-cp312-cp312-win_amd64.whl", hash = "sha256:e7f80da4fb34e9e69a7671ceff72e7a27b5866f72364593bf9a0c7468569ce6e", size = 87343 },
+    { url = "https://files.pythonhosted.org/packages/ef/44/a8317c505beb8083d1cf78c990608d6ddae2f7a74d5d52e7edb8eaaeb40c/polyagamma-2.0.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:324326defcb0d5f694a762388489d95b36f9dafb2ed6be9a311df6751b24ff3c", size = 85811 },
+    { url = "https://files.pythonhosted.org/packages/51/a6/9eb863ed43e225f08330c74e3e5b1f2ef0a29805033cf7348fdd468571d9/polyagamma-2.0.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:bfd5b8f935009cf56ad170807ba84c975e75d2d1d87fe6e702ea0341a79928b7", size = 243687 },
+    { url = "https://files.pythonhosted.org/packages/7a/5b/97403c8f77e92bd362ed2ee54bfe333b481f095c57ca15d7340c5e8d65a8/polyagamma-2.0.2-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:72bae2316e9bebfc2dd7b85cb7e725e35013b3b241f51f2cf4069f105322e2c3", size = 248619 },
+    { url = "https://files.pythonhosted.org/packages/d2/ac/645627380460d1104f4c16ac58470b6fff634ec9168eeaaeaaace806f33f/polyagamma-2.0.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:ecad80cbcf292602889ad98e62e2e69781012ec52c851d1047218904c0fbc33f", size = 255887 },
+    { url = "https://files.pythonhosted.org/packages/5f/d8/f7cc36de96fdc44bced6692a369e946ee55b93eed8ef1b8d087973a9b5ae/polyagamma-2.0.2-cp313-cp313-win_amd64.whl", hash = "sha256:e1d4e74ade9a15c0f10dac24c09f5ed8ff4e1d82a397429883fa89e3b11537f5", size = 87199 },
 ]
 
 [[package]]

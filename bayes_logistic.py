@@ -10,6 +10,7 @@ from scipy.special import log_expit, expit
 import seaborn as sns
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from polyagamma import random_polyagamma
 
 from utils import simulate  # , plot_trace
 
@@ -59,10 +60,9 @@ def calc_ess(is_ratios: np.ndarray) -> float:
 
 
 class BayesLogistic:
-
     def __init__(
         self,
-        solver: Literal["Laplace", "MH", "IS", "SIR", "Gibbs", "pymc"] = "IS",
+        solver: Literal["Laplace", "MH", "Gibbs", "IS", "SIR", "pymc"] = "IS",
         # n_draw: int = 1000,
         # n_burn: int = 1000,
         prior_mu: float = 0.0,
@@ -72,7 +72,7 @@ class BayesLogistic:
         # proposed_distribution: st.rv_continuous | None = None,
         # replace: bool = True,
     ):
-        assert solver in ["Laplace", "MH", "IS", "SIR", "pymc"]
+        assert solver in ["Laplace", "MH", "Gibbs", "IS", "SIR", "pymc"]
 
         self.solver_ = solver
         # self.n_draw_ = n_draw
@@ -87,10 +87,19 @@ class BayesLogistic:
         self.rng_ = np.random.default_rng(self.seed_)
 
     def _fit_Laplace(self, designX: np.ndarray, y: np.ndarray):
-        w, hessian = newton_estimate(designX, y, self.prior_mu_, self.prior_var_, return_hess=True)
+        w, hessian = newton_estimate(
+            designX, y, self.prior_mu_, self.prior_var_, return_hess=True
+        )
         self.posterior_ = st.multivariate_normal(w, np.linalg.inv(hessian))
 
-    def _fit_MH(self, designX: np.ndarray, y: np.ndarray, n_draw: int = 1000, n_burn: int = 1000, ppl_std: float = 1.0):
+    def _fit_MH(
+        self,
+        designX: np.ndarray,
+        y: np.ndarray,
+        n_draw: int = 1000,
+        n_burn: int = 1000,
+        ppl_std: float = 1.0,
+    ):
         self.n_draw_ = n_draw
         self.n_burn_ = n_burn
         self.chain_ = np.zeros((n_draw + n_burn, designX.shape[1]), dtype=float)
@@ -100,13 +109,38 @@ class BayesLogistic:
             w_next = self.rng_.normal(w, ppl_std, size=designX.shape[1])
             w_all = np.stack([w, w_next], axis=0)
             z = w_all @ designX.T
-            logp = (y * log_expit(z) + (1 - y) * log_expit(-z)).sum(axis=1) - 0.5 * ((w_all - self.prior_mu_)**2).sum(axis=1) / self.prior_var_
+            logp = (y * log_expit(z) + (1 - y) * log_expit(-z)).sum(axis=1) - 0.5 * (
+                (w_all - self.prior_mu_) ** 2
+            ).sum(axis=1) / self.prior_var_
             accept_prob = min(1, np.exp(logp[1] - logp[0]))
             if self.rng_.uniform() < accept_prob:
                 w = w_next
                 self.accept_flag_[i] = True
             self.chain_[i] = w
-            self.accept_ratio_ = self.accept_flag_[self.n_burn_:].mean()
+            self.accept_ratio_ = self.accept_flag_[self.n_burn_ :].mean()
+
+    def _fit_Gibbs(
+        self,
+        designX: np.ndarray,
+        y: np.ndarray,
+        n_draw: int = 1000,
+        n_burn: int = 1000,
+    ):
+        self.n_draw_ = n_draw
+        self.n_burn_ = n_burn
+        self.chain_ = np.zeros((n_draw + n_burn, designX.shape[1]), dtype=float)
+        self.accept_flag_ = np.zeros(n_draw + n_burn, dtype=bool)
+        w = np.zeros(designX.shape[1])
+        K = y - 0.5
+        for i in tqdm(range(n_draw + n_burn)):
+            omega = random_polyagamma(1, designX @ w, random_state=self.rng_)
+            sigma = np.linalg.inv(
+                designX.T @ np.diag(omega) @ designX
+                + np.eye(designX.shape[1]) / self.prior_var_
+            )
+            mu = sigma @ (self.prior_mu_ / self.prior_var_ + designX.T @ K)
+            w = self.rng_.multivariate_normal(mu, sigma)
+            self.chain_[i] = w
 
     def _fit_IS(self, designX: np.ndarray, y: np.ndarray):
         assert self.solver_ in ["IS", "SIR"]
@@ -131,9 +165,7 @@ class BayesLogistic:
             self.samples_IS_ = self.prop_dist_.rvs(size=self.n_iter_)  # L x p
         log_gw = self.prop_dist_.logpdf(self.samples_IS_)
 
-        log_pw = log_expit((self.samples_IS_ @ designX.T) * y_).sum(
-            axis=1
-        )  # L
+        log_pw = log_expit((self.samples_IS_ @ designX.T) * y_).sum(axis=1)  # L
         log_pw += (
             st.norm(loc=self.prior_mu_, scale=np.sqrt(self.prior_var_))
             .logpdf(self.samples_IS_)
@@ -142,9 +174,9 @@ class BayesLogistic:
 
         self.importance_ratios_ = np.exp(log_pw - log_gw)
         if self.solver_ == "IS":
-            self.beta_ = (
-                self.samples_IS_ * self.importance_ratios_[:, None]
-            ).sum(axis=0) / self.importance_ratios_.sum()
+            self.beta_ = (self.samples_IS_ * self.importance_ratios_[:, None]).sum(
+                axis=0
+            ) / self.importance_ratios_.sum()
             self.ess_ = calc_ess(self.importance_ratios_)
 
     def _fit_SIR(self, designX: np.ndarray, y: np.ndarray):
@@ -172,9 +204,7 @@ class BayesLogistic:
             self.idata_pymc_ = pymc.sample(
                 draws=self.n_draw_, tune=self.n_burn_, random_seed=self.seed_
             )
-            self.samples_pymc_ = self.idata_pymc_["posterior"][
-                "beta"
-            ].to_numpy()
+            self.samples_pymc_ = self.idata_pymc_["posterior"]["beta"].to_numpy()
             self.beta_ = az.summary(self.idata_pymc_, hdi_prob=0.95)
 
     def fit(self, X: np.ndarray, y: np.ndarray, **kwargs):
@@ -186,6 +216,8 @@ class BayesLogistic:
             self._fit_Laplace(dmat, y, **kwargs)
         elif self.solver_ == "MH":
             self._fit_MH(dmat, y, **kwargs)
+        elif self.solver_ == "Gibbs":
+            self._fit_Gibbs(dmat, y, **kwargs)
         elif self.solver_ == "IS":
             self._fit_IS(dmat, y)
         elif self.solver_ == "pymc":
@@ -197,32 +229,36 @@ class BayesLogistic:
 
     def summary(self, confidence: float = 0.95) -> pd.DataFrame:
         if self.solver_ == "Laplace":
-            res = st.norm(loc=self.posterior_.mean, scale=np.sqrt(np.diag(self.posterior_.cov))).interval(confidence)
+            res = st.norm(
+                loc=self.posterior_.mean, scale=np.sqrt(np.diag(self.posterior_.cov))
+            ).interval(confidence)
             return pd.DataFrame(
                 {
                     "mean": self.posterior_.mean,
                     "ci_lower": res[0],
                     "ci_upper": res[1],
                 },
-                index=["intercept"] + [f"beta_{i}" for i in range(1, self.posterior_.cov.shape[0])]
+                index=["intercept"]
+                + [f"beta_{i}" for i in range(1, self.posterior_.cov.shape[0])],
             )
-        elif self.solver_ == "MH":
-            samples = self.chain_[self.n_burn_:]
+        elif self.solver_ in ["MH", "Gibbs"]:
+            samples = self.chain_[self.n_burn_ :]
             return pd.DataFrame(
                 {
                     "mean": samples.mean(axis=0),
                     "ci_lower": np.percentile(samples, (1 - confidence) / 2, axis=0),
                     "ci_upper": np.percentile(samples, (1 + confidence) / 2, axis=0),
                 },
-                index=["intercept"] + [f"beta_{i}" for i in range(1, self.chain_.shape[1])],
+                index=["intercept"]
+                + [f"beta_{i}" for i in range(1, self.chain_.shape[1])],
             )
         else:
             raise NotImplementedError
 
     def plot_trace(self, savefn: str | None = None):
-        if self.solver_ not in ["MH"]:
+        if self.solver_ not in ["MH", "Gibbs"]:
             raise ValueError("trace plot is only available for MH solver.")
-        plt.plot(self.chain_[self.n_burn_:, :])
+        plt.plot(self.chain_[self.n_burn_ :, :])
         plt.xlabel("iteration")
         plt.ylabel("parameter value")
         plt.legend([f"beta_{i}" for i in range(self.chain_.shape[1])])
@@ -230,7 +266,6 @@ class BayesLogistic:
             plt.savefig(savefn)
         else:
             plt.show()
-
 
 
 def main():
@@ -252,12 +287,19 @@ def main():
     # print(df)
 
     # MH sample
-    model_mh = BayesLogistic(solver="MH")
-    model_mh.fit(dat["X"], dat["y"], n_draw=10000, n_burn=10000, ppl_std=1.0)
-    df = model_mh.summary()
+    # model_mh = BayesLogistic(solver="MH")
+    # model_mh.fit(dat["X"], dat["y"], n_draw=10000, n_burn=10000, ppl_std=1.0)
+    # df = model_mh.summary()
+    # print(df)
+    # print(model_mh.accept_ratio_)
+    # model_mh.plot_trace("./res/mh_trace.png")
+
+    # Gibbs sample
+    model_gibbs = BayesLogistic(solver="Gibbs")
+    model_gibbs.fit(dat["X"], dat["y"], n_draw=10000, n_burn=10000)
+    df = model_gibbs.summary()
     print(df)
-    print(model_mh.accept_ratio_)
-    model_mh.plot_trace("./res/mh_trace.png")
+    model_gibbs.plot_trace("./res/gibbs_trace.png")
 
     # # pymc
     # model_pymc = BayesLogistic(
