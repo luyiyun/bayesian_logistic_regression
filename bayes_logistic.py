@@ -62,7 +62,7 @@ def calc_ess(is_ratios: np.ndarray) -> float:
 class BayesLogistic:
     def __init__(
         self,
-        solver: Literal["Laplace", "MH", "Gibbs", "IS", "SIR", "pymc"] = "IS",
+        solver: Literal["Laplace", "MH", "Gibbs", "VI"] = "Gibbs",
         # n_draw: int = 1000,
         # n_burn: int = 1000,
         prior_mu: float = 0.0,
@@ -72,7 +72,7 @@ class BayesLogistic:
         # proposed_distribution: st.rv_continuous | None = None,
         # replace: bool = True,
     ):
-        assert solver in ["Laplace", "MH", "Gibbs", "IS", "SIR", "pymc"]
+        assert solver in ["Laplace", "MH", "Gibbs", "VI"]
 
         self.solver_ = solver
         # self.n_draw_ = n_draw
@@ -141,6 +141,52 @@ class BayesLogistic:
             mu = sigma @ (self.prior_mu_ / self.prior_var_ + designX.T @ K)
             w = self.rng_.multivariate_normal(mu, sigma)
             self.chain_[i] = w
+
+    def _fit_VI(
+        self,
+        designX: np.ndarray,
+        y: np.ndarray,
+        n_iter: int = 500,
+        delta: float = 1e-5,
+    ):
+        self.elbos_ = []
+
+        mu = np.zeros(designX.shape[1])
+        sigma = np.eye(designX.shape[1])
+        xi = np.ones(designX.shape[0])
+        lam = np.tanh(xi * 0.5) / (2 * xi)  # 乘以-2的操作放在这里
+        for i in tqdm(range(n_iter)):
+            # 更新mu和sigma
+            sigma = np.linalg.inv(
+                designX.T @ np.diag(lam) @ designX
+                + np.eye(designX.shape[1]) / self.prior_var_
+            )
+            mu = sigma @ ((self.prior_mu_ / self.prior_var_) + designX.T @ (y - 0.5))
+            # 更新xi
+            xi = np.sqrt(
+                np.einsum("ij,jk,ik->i", designX, sigma, designX) + (designX @ mu) ** 2
+            )
+            # 计算ELBO
+            lam = np.tanh(xi * 0.5) / (2 * xi)  # 乘以-2的操作放在这里
+            z = designX @ mu
+            z2 = np.einsum("ij,jk,ik->i", designX, sigma, designX) + z**2
+            elbo = np.sum(
+                log_expit(xi) + 0.5 * (z * (2 * y - 1) - xi) - 0.5 * lam * (z2 - xi**2)
+            ) - 0.5 * (
+                designX.shape[1] * np.log(self.prior_var_)
+                - np.linalg.slogdet(sigma)[1]
+                - designX.shape[1]
+                + np.sum(
+                    np.diag(sigma) / self.prior_var_
+                    - (mu - self.prior_mu_) ** 2 / self.prior_var_
+                )
+            )
+            self.elbos_.append(elbo)
+
+            if i > 0 and abs(self.elbos_[-1] - self.elbos_[-2]) < delta:
+                break
+
+        self.posterior_ = st.multivariate_normal(mu, sigma)
 
     def _fit_IS(self, designX: np.ndarray, y: np.ndarray):
         assert self.solver_ in ["IS", "SIR"]
@@ -218,17 +264,13 @@ class BayesLogistic:
             self._fit_MH(dmat, y, **kwargs)
         elif self.solver_ == "Gibbs":
             self._fit_Gibbs(dmat, y, **kwargs)
-        elif self.solver_ == "IS":
-            self._fit_IS(dmat, y)
-        elif self.solver_ == "pymc":
-            self._fit_pymc(dmat, y)
-        elif self.solver_ == "SIR":
-            self._fit_SIR(dmat, y)
+        elif self.solver_ == "VI":
+            self._fit_VI(dmat, y, **kwargs)
         else:
             raise NotImplementedError
 
     def summary(self, confidence: float = 0.95) -> pd.DataFrame:
-        if self.solver_ == "Laplace":
+        if self.solver_ in ["Laplace", "VI"]:
             res = st.norm(
                 loc=self.posterior_.mean, scale=np.sqrt(np.diag(self.posterior_.cov))
             ).interval(confidence)
@@ -256,12 +298,18 @@ class BayesLogistic:
             raise NotImplementedError
 
     def plot_trace(self, savefn: str | None = None):
-        if self.solver_ not in ["MH", "Gibbs"]:
-            raise ValueError("trace plot is only available for MH solver.")
-        plt.plot(self.chain_[self.n_burn_ :, :])
-        plt.xlabel("iteration")
-        plt.ylabel("parameter value")
-        plt.legend([f"beta_{i}" for i in range(self.chain_.shape[1])])
+        if self.solver_ in ["MH", "Gibbs"]:
+            plt.plot(self.chain_[self.n_burn_ :, :])
+            plt.xlabel("iteration")
+            plt.ylabel("parameter value")
+            plt.legend([f"beta_{i}" for i in range(self.chain_.shape[1])])
+        elif self.solver_ == "VI":
+            plt.plot(self.elbos_)
+            plt.xlabel("iteration")
+            plt.ylabel("ELBO")
+        else:
+            raise ValueError(f"trace plot is not available for {self.solver_} solver.")
+
         if savefn is not None:
             plt.savefig(savefn)
         else:
@@ -295,11 +343,18 @@ def main():
     # model_mh.plot_trace("./res/mh_trace.png")
 
     # Gibbs sample
-    model_gibbs = BayesLogistic(solver="Gibbs")
-    model_gibbs.fit(dat["X"], dat["y"], n_draw=10000, n_burn=10000)
-    df = model_gibbs.summary()
+    # model_gibbs = BayesLogistic(solver="Gibbs")
+    # model_gibbs.fit(dat["X"], dat["y"], n_draw=10000, n_burn=10000)
+    # df = model_gibbs.summary()
+    # print(df)
+    # model_gibbs.plot_trace("./res/gibbs_trace.png")
+
+    # VI
+    model_vi = BayesLogistic(solver="VI")
+    model_vi.fit(dat["X"], dat["y"], n_iter=500, delta=1e-5)
+    df = model_vi.summary()
     print(df)
-    model_gibbs.plot_trace("./res/gibbs_trace.png")
+    model_vi.plot_trace("./res/vi_trace.png")
 
     # # pymc
     # model_pymc = BayesLogistic(
